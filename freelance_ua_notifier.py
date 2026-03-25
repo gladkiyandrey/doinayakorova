@@ -582,22 +582,17 @@ def apply_quick_budget(settings: dict, preset: str) -> None:
 
 def format_status(chat_state: dict) -> str:
     settings = chat_state["settings"]
-    mode = "все слова" if settings.get("require_all_keywords") else "любое слово"
     pause_status = "включена" if settings.get("paused") else "выключена"
+    include_categories = settings.get("include_categories", [])
+    categories_line = short_list(include_categories) if include_categories else "все категории"
     return "\n".join(
         [
             "Текущие настройки",
             "",
             f"Уведомления: {pause_status}",
-            f"Бюджет: {format_budget(settings)}",
-            f"Режим ключевых слов: {mode}",
-            "",
-            "Ключевые слова",
-            f"include: {short_list(settings.get('include_keywords', []))}",
-            f"exclude: {short_list(settings.get('exclude_keywords', []))}",
             "",
             "Категории",
-            f"include: {short_list(settings.get('include_categories', []))}",
+            f"include: {categories_line}",
             f"exclude: {short_list(settings.get('exclude_categories', []))}",
             "",
             f"Сохранено подходящих заказов: {len(chat_state.get('seen_guids', []))}",
