@@ -28,15 +28,13 @@ DEFAULT_RUNTIME_LINK = Path.home() / ".freelance_ua_notifier_runtime"
 MAX_SEEN_GUIDS = 2000
 NETWORK_RETRIES = 3
 NETWORK_RETRY_DELAY = 1.5
+CATEGORY_CACHE_TTL = 900
 
 MAIN_MENU = [
     ["Статус", "Проверить"],
-    ["Категории", "Помощь"],
+    ["Категории", "Сбросить категории"],
+    ["Помощь"],
     ["Меню"],
-]
-CATEGORIES_MENU = [
-    ["Список с сайта", "Выбрать категории"],
-    ["Сбросить категории", "Назад"],
 ]
 CATEGORY_SPECS_MENU_TAIL = [
     ["Добавить всю категорию"],
@@ -59,6 +57,9 @@ class Order:
 class SiteCategory:
     name: str
     specializations: List[str]
+
+
+_CATEGORY_CACHE: Dict[str, object] = {"expires_at": 0.0, "items": []}
 
 
 def load_json(path: Path) -> dict:
@@ -296,8 +297,18 @@ def parse_site_categories(html: str) -> List[SiteCategory]:
 
 
 def collect_site_categories(config: dict) -> List[SiteCategory]:
+    now = time.monotonic()
+    cached_items = _CATEGORY_CACHE.get("items") or []
+    expires_at = float(_CATEGORY_CACHE.get("expires_at") or 0.0)
+    if cached_items and now < expires_at:
+        return list(cached_items)
+
     html = fetch_text(config.get("orders_url") or "https://freelance.ua/ru/orders/")
-    return parse_site_categories(html)
+    categories = parse_site_categories(html)
+    if categories:
+        _CATEGORY_CACHE["items"] = categories
+        _CATEGORY_CACHE["expires_at"] = now + CATEGORY_CACHE_TTL
+    return categories
 
 
 def print_categories(config: dict) -> int:
@@ -624,16 +635,6 @@ def format_status(chat_state: dict) -> str:
     )
 
 
-def category_help_text(config: dict) -> str:
-    categories = collect_site_categories(config)
-    preview_lines = []
-    for category in categories[:8]:
-        preview_lines.append(f"- {category.name}")
-        for spec in category.specializations[:4]:
-            preview_lines.append(f"  {spec}")
-    return "\n".join(preview_lines)
-
-
 def set_pending(chat_state: dict, action: Optional[str]) -> None:
     chat_state["pending_action"] = action
 
@@ -703,7 +704,7 @@ def handle_category_picker_message(config: dict, chat_id: str, chat_state: dict,
     selected_name = picker.get("selected_category")
     if normalize_text(text) == "назад":
         reset_category_picker(chat_state)
-        handle_categories_menu(config, chat_id)
+        send_main_menu(config, chat_id, chat_state, intro="Вернулись в главное меню.")
         return True
     if normalize_text(text) == "к списку категорий":
         picker["selected_category"] = None
@@ -727,7 +728,7 @@ def handle_category_picker_message(config: dict, chat_id: str, chat_state: dict,
     category = find_category_by_name(categories, selected_name)
     if category is None:
         reset_category_picker(chat_state)
-        handle_categories_menu(config, chat_id)
+        send_main_menu(config, chat_id, chat_state, intro="Вернулись в главное меню.")
         return True
 
     settings_key = "include_categories" if target == "include" else "exclude_categories"
@@ -843,20 +844,9 @@ def handle_keywords_menu(config: dict, chat_id: str, chat_state: dict) -> None:
     )
 
 
-def handle_categories_menu(config: dict, chat_id: str) -> None:
-    send_telegram_message(
-        config,
-        chat_id,
-        "\n".join(
-            [
-                "Категории",
-                "",
-                "Откройте список категорий сайта и выберите нужные.",
-                "Этого достаточно, ручной ввод больше не нужен.",
-            ]
-        ),
-        keyboard=CATEGORIES_MENU,
-    )
+def open_categories_home(config: dict, chat_id: str, chat_state: dict) -> None:
+    current = short_list(chat_state["settings"].get("include_categories", [])) or "не заданы"
+    open_category_picker(config, chat_id, chat_state, "include")
 
 
 def current_matches_for_chat(orders: List[Order], chat_state: dict) -> List[Order]:
@@ -907,7 +897,7 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
                 [
                     "Как пользоваться ботом",
                     "",
-                    "Категории: откройте список сайта и выберите нужные.",
+                    "Кнопка Категории сразу открывает выбор категорий с сайта.",
                     "Если категории не заданы, бот всё равно дополнительно ищет по ключевым словам в названии и описании.",
                     "Кнопка Проверить показывает текущие совпадения сразу.",
                     "Отмена ввода: /cancel или Назад.",
@@ -924,15 +914,7 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
         send_main_menu(config, chat_id, chat_state, intro="Вернулись в главное меню.")
         return ["save"]
     if normalized == "категории":
-        handle_categories_menu(config, chat_id)
-        return ["save"]
-    if normalized in {"список категорий", "список с сайта"}:
-        send_telegram_message(
-            config,
-            chat_id,
-            "Категории и специализации с сайта:\n\n" + category_help_text(config),
-            keyboard=CATEGORIES_MENU,
-        )
+        open_category_picker(config, chat_id, chat_state, "include")
         return ["save"]
     if normalized in {"выбрать категории", "выбрать include категории", "выбрать include"}:
         open_category_picker(config, chat_id, chat_state, "include")
@@ -940,7 +922,7 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
     if normalized in {"сбросить категории", "очистить категории"}:
         settings["include_categories"] = []
         settings["exclude_categories"] = []
-        send_telegram_message(config, chat_id, "Категории сброшены.", keyboard=CATEGORIES_MENU)
+        send_telegram_message(config, chat_id, "Категории сброшены.", keyboard=menu_with_pause(chat_state))
         return ["save"]
     if normalized in {"/check", "проверить сейчас", "проверить"}:
         return ["manual_check", "save"]
@@ -1193,7 +1175,7 @@ def main(argv: Sequence[str]) -> int:
         print(f"[warn] Не удалось обновить команды бота: {exc}", file=sys.stderr)
 
     orders_interval = int(config.get("poll_interval_seconds", 180))
-    telegram_poll_timeout = int(config.get("telegram_poll_timeout_seconds", 3))
+    telegram_poll_timeout = int(config.get("telegram_poll_timeout_seconds", 1))
     next_orders_check = 0.0
 
     print(f"Запущен Telegram-бот и мониторинг freelance.ua. Интервал заказов: {orders_interval} сек.")
