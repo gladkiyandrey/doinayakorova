@@ -29,8 +29,7 @@ MAX_SEEN_GUIDS = 2000
 
 MAIN_MENU = [
     ["Статус", "Проверить"],
-    ["Ключевые", "Категории"],
-    ["Бюджет", "Пауза"],
+    ["Категории", "Пауза"],
     ["Помощь", "Меню"],
 ]
 KEYWORDS_MENU = [
@@ -467,13 +466,13 @@ def get_updates(config: dict, offset: int, timeout: int = 20) -> List[dict]:
 
 def default_chat_settings(config: dict) -> dict:
     return {
-        "include_keywords": list(config.get("include_keywords", [])),
-        "exclude_keywords": list(config.get("exclude_keywords", [])),
+        "include_keywords": [],
+        "exclude_keywords": [],
         "include_categories": list(config.get("include_categories", [])),
         "exclude_categories": list(config.get("exclude_categories", [])),
-        "require_all_keywords": bool(config.get("require_all_keywords", False)),
-        "min_price_uah": config.get("min_price_uah"),
-        "max_price_uah": config.get("max_price_uah"),
+        "require_all_keywords": False,
+        "min_price_uah": None,
+        "max_price_uah": None,
         "paused": False,
     }
 
@@ -802,7 +801,7 @@ def send_main_menu(config: dict, chat_id: str, chat_state: dict, intro: Optional
         [
             "Главное меню",
             "",
-            "Здесь можно быстро проверить заказы, настроить фильтры и поставить уведомления на паузу.",
+            "Здесь можно быстро проверить заказы, настроить категории и поставить уведомления на паузу.",
         ]
     )
     send_telegram_message(config, chat_id, text, keyboard=menu_with_pause(chat_state))
@@ -903,11 +902,10 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
                 [
                     "Как пользоваться ботом",
                     "",
-                    "Ключевые: include и exclude задаются списком через запятую.",
                     "Категории: лучше выбирать из списка сайта.",
-                    "Бюджет: можно выбрать диапазон, менять кнопками или ввести числа.",
+                    "Если категории не заданы, бот показывает все новые заказы.",
+                    "Кнопка Проверить показывает текущие совпадения сразу.",
                     "Пауза: временно отключает уведомления.",
-                    "Проверить: показывает текущие совпадения сразу.",
                     "Отмена ввода: /cancel или Назад.",
                 ]
             ),
@@ -930,54 +928,12 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
         send_main_menu(config, chat_id, chat_state, intro="Вернулись в главное меню.")
         return ["save"]
     if normalized in {"ключевые слова", "ключевые"}:
-        handle_keywords_menu(config, chat_id, chat_state)
-        return ["save"]
-    if normalized == "показать ключевые":
         send_telegram_message(
             config,
             chat_id,
-            "\n".join(
-                [
-                    "Ключевые слова",
-                    f"Include: {short_list(settings.get('include_keywords', []))}",
-                    f"Exclude: {short_list(settings.get('exclude_keywords', []))}",
-                    f"Режим: {'все слова' if settings.get('require_all_keywords') else 'любое слово'}",
-                ]
-            ),
-            keyboard=KEYWORDS_MENU,
+            "Фильтр по ключевым словам сейчас отключен. Бот ориентируется на категории или показывает все новые заказы, если категории не заданы.",
+            keyboard=menu_with_pause(chat_state),
         )
-        return ["save"]
-    if normalized in {"задать include", "настроить include"}:
-        set_pending(chat_state, "set_include_keywords")
-        send_telegram_message(
-            config,
-            chat_id,
-            "Отправьте include ключевые слова через запятую. Пример: python, django, api",
-            keyboard=KEYWORDS_MENU,
-        )
-        return ["save"]
-    if normalized in {"задать exclude", "настроить exclude"}:
-        set_pending(chat_state, "set_exclude_keywords")
-        send_telegram_message(
-            config,
-            chat_id,
-            "Отправьте exclude ключевые слова через запятую. Пример: дизайн, логотип, smm",
-            keyboard=KEYWORDS_MENU,
-        )
-        return ["save"]
-    if normalized in {"переключить и/или", "режим и/или"}:
-        settings["require_all_keywords"] = not settings.get("require_all_keywords", False)
-        send_telegram_message(
-            config,
-            chat_id,
-            f"Режим переключен на {'все слова' if settings['require_all_keywords'] else 'любое слово'}.",
-            keyboard=KEYWORDS_MENU,
-        )
-        return ["save"]
-    if normalized == "очистить ключевые":
-        settings["include_keywords"] = []
-        settings["exclude_keywords"] = []
-        send_telegram_message(config, chat_id, "Ключевые слова очищены.", keyboard=KEYWORDS_MENU)
         return ["save"]
     if normalized == "категории":
         handle_categories_menu(config, chat_id)
@@ -1034,65 +990,12 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
         send_telegram_message(config, chat_id, "Фильтр категорий очищен.", keyboard=CATEGORIES_MENU)
         return ["save"]
     if normalized == "бюджет":
-        handle_budget_menu(config, chat_id)
-        return ["save"]
-    if normalized == "показать бюджет":
-        send_telegram_message(config, chat_id, f"Текущий бюджет: {format_budget(settings)}", keyboard=BUDGET_MENU)
-        return ["save"]
-    if normalized in {"быстрый выбор бюджета", "готовые диапазоны"}:
         send_telegram_message(
             config,
             chat_id,
-            "Выберите готовый диапазон бюджета.",
-            keyboard=QUICK_BUDGET_MENU,
+            "Фильтр по бюджету сейчас отключен. Бот не отсекает заказы по сумме.",
+            keyboard=menu_with_pause(chat_state),
         )
-        return ["save"]
-    if normalized in {"до 1000", "1000-5000", "5000-15000", "15000-30000", "от 30000", "любой бюджет"}:
-        apply_quick_budget(settings, normalized)
-        send_telegram_message(
-            config,
-            chat_id,
-            f"Бюджет обновлен: {format_budget(settings)}",
-            keyboard=BUDGET_MENU,
-        )
-        return ["save"]
-    if normalized == "мин +500":
-        shift_budget(settings, "min_price_uah", 500)
-        send_telegram_message(config, chat_id, f"Бюджет обновлен: {format_budget(settings)}", keyboard=BUDGET_MENU)
-        return ["save"]
-    if normalized == "мин -500":
-        shift_budget(settings, "min_price_uah", -500)
-        send_telegram_message(config, chat_id, f"Бюджет обновлен: {format_budget(settings)}", keyboard=BUDGET_MENU)
-        return ["save"]
-    if normalized == "макс +500":
-        shift_budget(settings, "max_price_uah", 500)
-        send_telegram_message(config, chat_id, f"Бюджет обновлен: {format_budget(settings)}", keyboard=BUDGET_MENU)
-        return ["save"]
-    if normalized == "макс -500":
-        shift_budget(settings, "max_price_uah", -500)
-        send_telegram_message(config, chat_id, f"Бюджет обновлен: {format_budget(settings)}", keyboard=BUDGET_MENU)
-        return ["save"]
-    if normalized == "мин +1000":
-        shift_budget(settings, "min_price_uah", 1000)
-        send_telegram_message(config, chat_id, f"Бюджет обновлен: {format_budget(settings)}", keyboard=BUDGET_MENU)
-        return ["save"]
-    if normalized == "макс +1000":
-        shift_budget(settings, "max_price_uah", 1000)
-        send_telegram_message(config, chat_id, f"Бюджет обновлен: {format_budget(settings)}", keyboard=BUDGET_MENU)
-        return ["save"]
-    if normalized in {"задать бюджет", "ввести вручную"}:
-        set_pending(chat_state, "set_budget")
-        send_telegram_message(
-            config,
-            chat_id,
-            "Отправьте бюджет так: 1000 15000. Одно число = только минимум. 'любой' = сброс.",
-            keyboard=BUDGET_MENU,
-        )
-        return ["save"]
-    if normalized in {"сбросить бюджет", "сбросить"}:
-        settings["min_price_uah"] = None
-        settings["max_price_uah"] = None
-        send_telegram_message(config, chat_id, "Бюджетный фильтр сброшен.", keyboard=BUDGET_MENU)
         return ["save"]
     if normalized in {"/check", "проверить сейчас", "проверить"}:
         return ["manual_check", "save"]
