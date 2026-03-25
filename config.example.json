@@ -10,14 +10,24 @@
     "python",
     "parser",
     "парсер",
+    "парсинг",
+    "збір",
+    "збір даних",
     "telegram",
     "бот",
+    "боти",
+    "телеграм",
+    "телеграм бот",
+    "telegram bot",
     "django",
     "flask",
     "fastapi",
     "api",
+    "автоматизация",
+    "автоматизація",
     "scraping",
-    "automation"
+    "automation",
+    "автопостинг"
   ],
   "exclude_keywords": [
     "дизайн",
@@ -26,10 +36,7 @@
     "smm",
     "photoshop"
   ],
-  "include_categories": [
-    "программирование",
-    "веб-программирование"
-  ],
+  "include_categories": [],
   "exclude_categories": [],
   "require_all_keywords": false,
   "min_price_uah": 500,

@@ -355,9 +355,10 @@ def order_matches(order: Order, settings: dict) -> bool:
     exclude_categories = normalize_list(settings.get("exclude_categories", []))
     require_all_keywords = bool(settings.get("require_all_keywords", False))
 
-    if include_keywords and require_all_keywords and not all(keyword in haystack for keyword in include_keywords):
+    use_keyword_fallback = not include_categories
+    if use_keyword_fallback and include_keywords and require_all_keywords and not all(keyword in haystack for keyword in include_keywords):
         return False
-    if include_keywords and not require_all_keywords and not any(keyword in haystack for keyword in include_keywords):
+    if use_keyword_fallback and include_keywords and not require_all_keywords and not any(keyword in haystack for keyword in include_keywords):
         return False
     if exclude_keywords and any(keyword in haystack for keyword in exclude_keywords):
         return False
@@ -466,11 +467,11 @@ def get_updates(config: dict, offset: int, timeout: int = 20) -> List[dict]:
 
 def default_chat_settings(config: dict) -> dict:
     return {
-        "include_keywords": [],
-        "exclude_keywords": [],
+        "include_keywords": list(config.get("include_keywords", [])),
+        "exclude_keywords": list(config.get("exclude_keywords", [])),
         "include_categories": list(config.get("include_categories", [])),
         "exclude_categories": list(config.get("exclude_categories", [])),
-        "require_all_keywords": False,
+        "require_all_keywords": bool(config.get("require_all_keywords", False)),
         "min_price_uah": None,
         "max_price_uah": None,
         "paused": False,
@@ -585,15 +586,22 @@ def format_status(chat_state: dict) -> str:
     pause_status = "включена" if settings.get("paused") else "выключена"
     include_categories = settings.get("include_categories", [])
     categories_line = short_list(include_categories) if include_categories else "все категории"
+    keyword_mode = "по категориям" if include_categories else "по ключевым словам"
+    keywords_line = short_list(settings.get("include_keywords", []))
     return "\n".join(
         [
             "Текущие настройки",
             "",
             f"Уведомления: {pause_status}",
+            f"Режим поиска: {keyword_mode}",
             "",
             "Категории",
             f"include: {categories_line}",
             f"exclude: {short_list(settings.get('exclude_categories', []))}",
+            "",
+            "Ключевые слова",
+            f"include: {keywords_line}",
+            f"exclude: {short_list(settings.get('exclude_keywords', []))}",
             "",
             f"Сохранено подходящих заказов: {len(chat_state.get('seen_guids', []))}",
         ]
