@@ -5,6 +5,7 @@
   "feed_url": "https://freelance.ua/ru/orders/rss",
   "orders_url": "https://freelance.ua/ru/orders/",
   "poll_interval_seconds": 60,
+  "telegram_poll_timeout_seconds": 3,
   "pages_to_scan": 3,
   "include_keywords": [
     "python",

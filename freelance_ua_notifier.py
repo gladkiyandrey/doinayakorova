@@ -1038,9 +1038,9 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
     return ["save"]
 
 
-def process_updates(config: dict, state: dict, state_path: Path) -> List[str]:
+def process_updates(config: dict, state: dict, state_path: Path, timeout: int) -> List[str]:
     actions: List[str] = []
-    updates = get_updates(config, int(state.get("telegram_offset", 0)))
+    updates = get_updates(config, int(state.get("telegram_offset", 0)), timeout=timeout)
     if not updates:
         return actions
 
@@ -1277,12 +1277,13 @@ def main(argv: Sequence[str]) -> int:
         print(f"[warn] Не удалось обновить команды бота: {exc}", file=sys.stderr)
 
     orders_interval = int(config.get("poll_interval_seconds", 180))
+    telegram_poll_timeout = int(config.get("telegram_poll_timeout_seconds", 3))
     next_orders_check = 0.0
 
     print(f"Запущен Telegram-бот и мониторинг freelance.ua. Интервал заказов: {orders_interval} сек.")
     while True:
         try:
-            actions = process_updates(config, state, state_path)
+            actions = process_updates(config, state, state_path, timeout=telegram_poll_timeout)
             if "manual_check" in actions:
                 orders = collect_orders(config)
                 for chat_id in get_allowed_chat_ids(config):
