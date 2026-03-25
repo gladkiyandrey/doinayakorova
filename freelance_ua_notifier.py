@@ -26,6 +26,8 @@ USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) CodexFreelanceUANo
 DEFAULT_LABEL = "ua.freelance.notifier"
 DEFAULT_RUNTIME_LINK = Path.home() / ".freelance_ua_notifier_runtime"
 MAX_SEEN_GUIDS = 2000
+NETWORK_RETRIES = 3
+NETWORK_RETRY_DELAY = 1.5
 
 MAIN_MENU = [
     ["Статус", "Проверить"],
@@ -88,10 +90,24 @@ def save_json(path: Path, data: dict) -> None:
 
 
 def fetch_text(url: str, timeout: int = 25) -> str:
-    request = Request(url, headers={"User-Agent": USER_AGENT})
-    with urlopen(request, timeout=timeout) as response:
-        charset = response.headers.get_content_charset() or "utf-8"
-        return response.read().decode(charset, errors="replace")
+    last_error: Optional[Exception] = None
+    for attempt in range(1, NETWORK_RETRIES + 1):
+        try:
+            request = Request(url, headers={"User-Agent": USER_AGENT})
+            with urlopen(request, timeout=timeout) as response:
+                charset = response.headers.get_content_charset() or "utf-8"
+                return response.read().decode(charset, errors="replace")
+        except HTTPError as exc:
+            last_error = exc
+            if 400 <= exc.code < 500 and exc.code != 429:
+                raise
+        except (URLError, TimeoutError, ConnectionResetError) as exc:
+            last_error = exc
+        if attempt < NETWORK_RETRIES:
+            time.sleep(NETWORK_RETRY_DELAY * attempt)
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"Не удалось получить {url}")
 
 
 def ensure_private_file(path: Path) -> None:
@@ -428,18 +444,32 @@ def build_reply_markup(keyboard: List[List[str]], resize: bool = True) -> str:
 def telegram_api(config: dict, method: str, data: Optional[dict] = None, timeout: int = 25) -> dict:
     token = str(config["telegram_bot_token"])
     url = f"https://api.telegram.org/bot{token}/{method}"
-    encoded = None
-    headers = {"User-Agent": USER_AGENT}
-    if data is not None:
-        encoded = urlencode(data).encode("utf-8")
-        headers["Content-Type"] = "application/x-www-form-urlencoded"
-    request = Request(url, data=encoded, headers=headers)
-    with urlopen(request, timeout=timeout) as response:
-        body = response.read().decode("utf-8", errors="replace")
-    parsed = json.loads(body)
-    if not parsed.get("ok"):
-        raise RuntimeError(f"Telegram API error: {parsed}")
-    return parsed
+    last_error: Optional[Exception] = None
+    for attempt in range(1, NETWORK_RETRIES + 1):
+        try:
+            encoded = None
+            headers = {"User-Agent": USER_AGENT}
+            if data is not None:
+                encoded = urlencode(data).encode("utf-8")
+                headers["Content-Type"] = "application/x-www-form-urlencoded"
+            request = Request(url, data=encoded, headers=headers)
+            with urlopen(request, timeout=timeout) as response:
+                body = response.read().decode("utf-8", errors="replace")
+            parsed = json.loads(body)
+            if not parsed.get("ok"):
+                raise RuntimeError(f"Telegram API error: {parsed}")
+            return parsed
+        except HTTPError as exc:
+            last_error = exc
+            if 400 <= exc.code < 500 and exc.code not in {408, 409, 429}:
+                raise
+        except (URLError, TimeoutError, ConnectionResetError, RuntimeError) as exc:
+            last_error = exc
+        if attempt < NETWORK_RETRIES:
+            time.sleep(NETWORK_RETRY_DELAY * attempt)
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"Не удалось вызвать Telegram API: {method}")
 
 
 def send_telegram_message(config: dict, chat_id: str, text: str, keyboard: Optional[List[List[str]]] = None) -> None:
