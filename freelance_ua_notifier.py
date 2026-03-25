@@ -525,7 +525,7 @@ def get_chat_state(state: dict, chat_id: str, config: dict) -> dict:
 
 def menu_with_pause(chat_state: dict) -> List[List[str]]:
     menu = [row[:] for row in MAIN_MENU]
-    menu[2][1] = "Возобновить" if chat_state["settings"].get("paused") else "Пауза"
+    menu[1][1] = "Возобновить" if chat_state["settings"].get("paused") else "Пауза"
     return menu
 
 
