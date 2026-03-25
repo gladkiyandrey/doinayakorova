@@ -431,8 +431,8 @@ def format_order_message(order: Order) -> str:
     )
 
 
-def build_inline_markup(buttons: List[List[dict]]) -> str:
-    return json.dumps({"inline_keyboard": buttons}, ensure_ascii=False)
+def build_reply_markup(keyboard: List[List[str]], resize: bool = True) -> str:
+    return json.dumps({"keyboard": keyboard, "resize_keyboard": resize}, ensure_ascii=False)
 
 
 def telegram_api(config: dict, method: str, data: Optional[dict] = None, timeout: int = 25) -> dict:
@@ -466,36 +466,11 @@ def telegram_api(config: dict, method: str, data: Optional[dict] = None, timeout
     raise RuntimeError(f"Не удалось вызвать Telegram API: {method}")
 
 
-def send_telegram_message(config: dict, chat_id: str, text: str, inline_keyboard: Optional[List[List[dict]]] = None) -> dict:
+def send_telegram_message(config: dict, chat_id: str, text: str, keyboard: Optional[List[List[str]]] = None) -> dict:
     payload = {"chat_id": chat_id, "text": text, "disable_web_page_preview": "true"}
-    if inline_keyboard is not None:
-        payload["reply_markup"] = build_inline_markup(inline_keyboard)
+    if keyboard is not None:
+        payload["reply_markup"] = build_reply_markup(keyboard)
     return telegram_api(config, "sendMessage", payload)
-
-
-def edit_telegram_message(
-    config: dict, chat_id: str, message_id: int, text: str, inline_keyboard: Optional[List[List[dict]]] = None
-) -> None:
-    payload = {
-        "chat_id": chat_id,
-        "message_id": str(message_id),
-        "text": text,
-        "disable_web_page_preview": "true",
-    }
-    if inline_keyboard is not None:
-        payload["reply_markup"] = build_inline_markup(inline_keyboard)
-    try:
-        telegram_api(config, "editMessageText", payload)
-    except Exception as exc:
-        if "message is not modified" not in str(exc):
-            raise
-
-
-def answer_callback_query(config: dict, callback_query_id: str, text: Optional[str] = None) -> None:
-    payload = {"callback_query_id": callback_query_id}
-    if text:
-        payload["text"] = text
-    telegram_api(config, "answerCallbackQuery", payload)
 
 
 def set_telegram_commands(config: dict) -> None:
@@ -519,7 +494,7 @@ def get_updates(config: dict, offset: int, timeout: int = 20) -> List[dict]:
     payload = {
         "offset": str(offset),
         "timeout": str(timeout),
-        "allowed_updates": json.dumps(["message", "callback_query"]),
+        "allowed_updates": json.dumps(["message"]),
     }
     result = telegram_api(config, "getUpdates", payload, timeout=timeout + 5)
     return result.get("result", [])
@@ -673,34 +648,20 @@ def append_unique(target_list: List[str], value: str) -> None:
         target_list.append(value)
 
 
-def main_menu_inline() -> List[List[dict]]:
-    return [
-        [
-            {"text": "Статус", "callback_data": "menu:status"},
-            {"text": "Проверить", "callback_data": "menu:check"},
-        ],
-        [
-            {"text": "Категории", "callback_data": "menu:categories"},
-            {"text": "Сбросить категории", "callback_data": "menu:reset_categories"},
-        ],
-        [{"text": "Помощь", "callback_data": "menu:help"}],
-    ]
-
-
-def categories_root_inline(categories: List[SiteCategory]) -> List[List[dict]]:
-    keyboard: List[List[dict]] = []
-    for index, category in enumerate(categories):
-        keyboard.append([{"text": category.name, "callback_data": f"cat:{index}"}])
-    keyboard.append([{"text": "Назад", "callback_data": "menu:home"}])
+def categories_root_keyboard(categories: List[SiteCategory]) -> List[List[str]]:
+    keyboard: List[List[str]] = []
+    for category in categories:
+        keyboard.append([category.name])
+    keyboard.append(["Назад"])
     return keyboard
 
 
-def category_specs_inline(category_index: int, category: SiteCategory) -> List[List[dict]]:
-    keyboard: List[List[dict]] = [[{"text": "Добавить всю категорию", "callback_data": f"catadd:{category_index}"}]]
-    for spec_index, spec in enumerate(category.specializations):
-        keyboard.append([{"text": spec, "callback_data": f"spec:{category_index}:{spec_index}"}])
-    keyboard.append([{"text": "К списку категорий", "callback_data": "menu:categories"}])
-    keyboard.append([{"text": "Назад", "callback_data": "menu:home"}])
+def category_specs_keyboard(category: SiteCategory) -> List[List[str]]:
+    keyboard: List[List[str]] = [row[:] for row in CATEGORY_SPECS_MENU_TAIL[:1]]
+    for spec in category.specializations:
+        keyboard.append([spec])
+    keyboard.append(["К списку категорий"])
+    keyboard.append(["Назад"])
     return keyboard
 
 
@@ -729,7 +690,7 @@ def open_category_picker(config: dict, chat_id: str, chat_state: dict, target: s
         config,
         chat_id,
         "Выберите категорию. Это точные названия с freelance.ua.",
-        inline_keyboard=categories_root_inline(categories),
+        keyboard=categories_root_keyboard(categories),
     )
 
 
@@ -864,7 +825,7 @@ def send_main_menu(config: dict, chat_id: str, chat_state: dict, intro: Optional
             "Здесь можно быстро проверить заказы и настроить категории.",
         ]
     )
-    send_telegram_message(config, chat_id, text, inline_keyboard=main_menu_inline())
+    send_telegram_message(config, chat_id, text, keyboard=menu_with_pause(chat_state))
 
 
 def handle_keywords_menu(config: dict, chat_id: str, chat_state: dict) -> None:
@@ -906,115 +867,6 @@ def send_manual_check(config: dict, chat_id: str, chat_state: dict, orders: List
     )
     for order in matches[:3]:
         send_telegram_message(config, chat_id, format_order_message(order))
-
-
-def process_callback(
-    config: dict, state: dict, chat_id: str, callback_query_id: str, message_id: int, data: str
-) -> List[str]:
-    if chat_id not in get_allowed_chat_ids(config):
-        answer_callback_query(config, callback_query_id)
-        return []
-
-    chat_state = get_chat_state(state, chat_id, config)
-    settings = chat_state["settings"]
-
-    if data == "menu:home":
-        edit_telegram_message(config, chat_id, message_id, "Главное меню", inline_keyboard=main_menu_inline())
-        answer_callback_query(config, callback_query_id)
-        return ["save"]
-    if data == "menu:status":
-        edit_telegram_message(config, chat_id, message_id, format_status(chat_state), inline_keyboard=main_menu_inline())
-        answer_callback_query(config, callback_query_id)
-        return ["save"]
-    if data == "menu:help":
-        edit_telegram_message(
-            config,
-            chat_id,
-            message_id,
-            "\n".join(
-                [
-                    "Как пользоваться ботом",
-                    "",
-                    "Кнопка Категории сразу открывает выбор категорий с сайта.",
-                    "Если категории не заданы, бот всё равно дополнительно ищет по ключевым словам в названии и описании.",
-                    "Кнопка Проверить показывает текущие совпадения сразу.",
-                ]
-            ),
-            inline_keyboard=main_menu_inline(),
-        )
-        answer_callback_query(config, callback_query_id)
-        return ["save"]
-    if data == "menu:categories":
-        categories = collect_site_categories(config)
-        edit_telegram_message(
-            config,
-            chat_id,
-            message_id,
-            "Выберите категорию. Это точные названия с freelance.ua.",
-            inline_keyboard=categories_root_inline(categories),
-        )
-        answer_callback_query(config, callback_query_id)
-        return ["save"]
-    if data == "menu:reset_categories":
-        settings["include_categories"] = []
-        settings["exclude_categories"] = []
-        edit_telegram_message(config, chat_id, message_id, "Категории сброшены.", inline_keyboard=main_menu_inline())
-        answer_callback_query(config, callback_query_id, text="Категории сброшены")
-        return ["save"]
-    if data == "menu:check":
-        answer_callback_query(config, callback_query_id, text="Проверяю...")
-        return ["manual_check", "save"]
-    if data.startswith("cat:"):
-        categories = collect_site_categories(config)
-        category_index = int(data.split(":", 1)[1])
-        if 0 <= category_index < len(categories):
-            category = categories[category_index]
-            edit_telegram_message(
-                config,
-                chat_id,
-                message_id,
-                f"Категория: {category.name}\nТеперь выберите точную специализацию или добавьте всю категорию.",
-                inline_keyboard=category_specs_inline(category_index, category),
-            )
-        answer_callback_query(config, callback_query_id)
-        return ["save"]
-    if data.startswith("catadd:"):
-        categories = collect_site_categories(config)
-        category_index = int(data.split(":", 1)[1])
-        if 0 <= category_index < len(categories):
-            category = categories[category_index]
-            append_unique(settings["include_categories"], category.name)
-            edit_telegram_message(
-                config,
-                chat_id,
-                message_id,
-                f"Добавлено: {category.name}",
-                inline_keyboard=category_specs_inline(category_index, category),
-            )
-            answer_callback_query(config, callback_query_id, text="Категория добавлена")
-            return ["save"]
-    if data.startswith("spec:"):
-        categories = collect_site_categories(config)
-        _, category_index_raw, spec_index_raw = data.split(":")
-        category_index = int(category_index_raw)
-        spec_index = int(spec_index_raw)
-        if 0 <= category_index < len(categories):
-            category = categories[category_index]
-            if 0 <= spec_index < len(category.specializations):
-                spec = category.specializations[spec_index]
-                append_unique(settings["include_categories"], spec)
-                edit_telegram_message(
-                    config,
-                    chat_id,
-                    message_id,
-                    f"Добавлено: {spec}",
-                    inline_keyboard=category_specs_inline(category_index, category),
-                )
-                answer_callback_query(config, callback_query_id, text="Специализация добавлена")
-                return ["save"]
-
-    answer_callback_query(config, callback_query_id)
-    return ["save"]
 
 
 def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[str]:
@@ -1092,17 +944,6 @@ def process_updates(config: dict, state: dict, state_path: Path, timeout: int) -
 
     for update in updates:
         state["telegram_offset"] = max(int(state.get("telegram_offset", 0)), int(update["update_id"]) + 1)
-        callback_query = update.get("callback_query") or {}
-        if callback_query:
-            callback_id = str(callback_query.get("id") or "")
-            data = str(callback_query.get("data") or "")
-            message = callback_query.get("message") or {}
-            chat = message.get("chat") or {}
-            chat_id = str(chat.get("id") or "")
-            message_id = int(message.get("message_id") or 0)
-            if callback_id and chat_id and message_id and data:
-                actions.extend(process_callback(config, state, chat_id, callback_id, message_id, data))
-            continue
         message = update.get("message") or {}
         chat = message.get("chat") or {}
         text = str(message.get("text") or "").strip()
