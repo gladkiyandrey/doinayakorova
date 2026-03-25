@@ -31,8 +31,8 @@ NETWORK_RETRY_DELAY = 1.5
 
 MAIN_MENU = [
     ["Статус", "Проверить"],
-    ["Категории", "Пауза"],
-    ["Помощь", "Меню"],
+    ["Категории", "Помощь"],
+    ["Меню"],
 ]
 KEYWORDS_MENU = [
     ["Показать ключевые", "Настроить include"],
@@ -515,7 +515,6 @@ def default_chat_settings(config: dict) -> dict:
         "require_all_keywords": bool(config.get("require_all_keywords", False)),
         "min_price_uah": None,
         "max_price_uah": None,
-        "paused": False,
     }
 
 
@@ -566,9 +565,7 @@ def get_chat_state(state: dict, chat_id: str, config: dict) -> dict:
 
 
 def menu_with_pause(chat_state: dict) -> List[List[str]]:
-    menu = [row[:] for row in MAIN_MENU]
-    menu[1][1] = "Возобновить" if chat_state["settings"].get("paused") else "Пауза"
-    return menu
+    return [row[:] for row in MAIN_MENU]
 
 
 def short_list(items: Sequence[str]) -> str:
@@ -624,7 +621,6 @@ def apply_quick_budget(settings: dict, preset: str) -> None:
 
 def format_status(chat_state: dict) -> str:
     settings = chat_state["settings"]
-    pause_status = "включена" if settings.get("paused") else "выключена"
     include_categories = settings.get("include_categories", [])
     categories_line = short_list(include_categories) if include_categories else "не заданы"
     keywords_line = short_list(settings.get("include_keywords", []))
@@ -632,7 +628,6 @@ def format_status(chat_state: dict) -> str:
         [
             "Текущие настройки",
             "",
-            f"Уведомления: {pause_status}",
             "Логика поиска: категории ИЛИ ключевые слова",
             "",
             "Категории",
@@ -948,7 +943,6 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
                     "Категории: лучше выбирать из списка сайта.",
                     "Если категории не заданы, бот показывает все новые заказы.",
                     "Кнопка Проверить показывает текущие совпадения сразу.",
-                    "Пауза: временно отключает уведомления.",
                     "Отмена ввода: /cancel или Назад.",
                 ]
             ),
@@ -957,14 +951,6 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
         return ["save"]
     if normalized in {"/status", "статус"}:
         send_telegram_message(config, chat_id, format_status(chat_state), keyboard=menu_with_pause(chat_state))
-        return ["save"]
-    if normalized in {"/pause", "пауза"}:
-        settings["paused"] = True
-        send_telegram_message(config, chat_id, "Уведомления поставлены на паузу.", keyboard=menu_with_pause(chat_state))
-        return ["save"]
-    if normalized in {"/resume", "возобновить"}:
-        settings["paused"] = False
-        send_telegram_message(config, chat_id, "Уведомления снова включены.", keyboard=menu_with_pause(chat_state))
         return ["save"]
     if normalized in {"/cancel", "назад"}:
         set_pending(chat_state, None)
@@ -1081,10 +1067,6 @@ def trim_seen_guids(guids: List[str]) -> List[str]:
 def notify_new_orders(config: dict, state: dict, orders: List[Order], manual_chat_id: Optional[str] = None) -> None:
     for chat_id in get_allowed_chat_ids(config):
         chat_state = get_chat_state(state, chat_id, config)
-        settings = chat_state["settings"]
-        if settings.get("paused") and manual_chat_id != chat_id:
-            continue
-
         matches = current_matches_for_chat(orders, chat_state)
         seen = set(chat_state.get("seen_guids", []))
 
