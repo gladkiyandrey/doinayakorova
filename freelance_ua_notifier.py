@@ -34,29 +34,12 @@ MAIN_MENU = [
     ["Категории", "Помощь"],
     ["Меню"],
 ]
-KEYWORDS_MENU = [
-    ["Показать ключевые", "Настроить include"],
-    ["Настроить exclude", "Режим И/ИЛИ"],
-    ["Очистить ключевые", "Назад"],
-]
 CATEGORIES_MENU = [
-    ["Показать категории", "Список с сайта"],
-    ["Выбрать include", "Выбрать exclude"],
-    ["Ввести include", "Ввести exclude"],
-    ["Очистить категории", "Назад"],
+    ["Список с сайта", "Выбрать категории"],
+    ["Сбросить категории", "Назад"],
 ]
-BUDGET_MENU = [
-    ["Показать бюджет", "Готовые диапазоны"],
-    ["Мин +500", "Мин -500"],
-    ["Макс +500", "Макс -500"],
-    ["Мин +1000", "Макс +1000"],
-    ["Ввести вручную", "Сбросить"],
-    ["Назад"],
-]
-QUICK_BUDGET_MENU = [
-    ["До 1000", "1000-5000"],
-    ["5000-15000", "15000-30000"],
-    ["От 30000", "Любой бюджет"],
+CATEGORY_SPECS_MENU_TAIL = [
+    ["Добавить всю категорию"],
     ["Назад"],
 ]
 
@@ -623,7 +606,6 @@ def format_status(chat_state: dict) -> str:
     settings = chat_state["settings"]
     include_categories = settings.get("include_categories", [])
     categories_line = short_list(include_categories) if include_categories else "не заданы"
-    keywords_line = short_list(settings.get("include_keywords", []))
     return "\n".join(
         [
             "Текущие настройки",
@@ -634,9 +616,8 @@ def format_status(chat_state: dict) -> str:
             f"include: {categories_line}",
             f"exclude: {short_list(settings.get('exclude_categories', []))}",
             "",
-            "Ключевые слова",
-            f"include: {keywords_line}",
-            f"exclude: {short_list(settings.get('exclude_keywords', []))}",
+            "Ключевые слова: автоматические",
+            "Если категории не заполнены или заказ плохо размечен, бот дополнительно смотрит описание и название.",
             "",
             f"Сохранено подходящих заказов: {len(chat_state.get('seen_guids', []))}",
         ]
@@ -675,10 +656,11 @@ def categories_root_keyboard(categories: List[SiteCategory]) -> List[List[str]]:
 
 
 def category_specs_keyboard(category: SiteCategory) -> List[List[str]]:
-    keyboard: List[List[str]] = [["Добавить всю категорию"]]
+    keyboard: List[List[str]] = [row[:] for row in CATEGORY_SPECS_MENU_TAIL[:1]]
     for spec in category.specializations:
         keyboard.append([spec])
-    keyboard.append(["К списку категорий", "Назад"])
+    keyboard.append(["К списку категорий"])
+    keyboard.append(["Назад"])
     return keyboard
 
 
@@ -701,12 +683,12 @@ def find_spec_in_category(category: SiteCategory, text: str) -> Optional[str]:
 def open_category_picker(config: dict, chat_id: str, chat_state: dict, target: str) -> None:
     categories = collect_site_categories(config)
     picker = chat_state["category_picker"]
-    picker["target"] = target
+    picker["target"] = "include"
     picker["selected_category"] = None
     send_telegram_message(
         config,
         chat_id,
-        f"Выберите категорию для списка {target}. Это точные названия с freelance.ua.",
+        "Выберите категорию. Это точные названия с freelance.ua.",
         keyboard=categories_root_keyboard(categories),
     )
 
@@ -869,26 +851,11 @@ def handle_categories_menu(config: dict, chat_id: str) -> None:
             [
                 "Категории",
                 "",
-                "Лучше использовать выбор из списка сайта.",
-                "Ручной ввод тоже доступен, если нужно вставить сразу несколько значений.",
+                "Откройте список категорий сайта и выберите нужные.",
+                "Этого достаточно, ручной ввод больше не нужен.",
             ]
         ),
         keyboard=CATEGORIES_MENU,
-    )
-
-
-def handle_budget_menu(config: dict, chat_id: str) -> None:
-    send_telegram_message(
-        config,
-        chat_id,
-        "\n".join(
-            [
-                "Бюджет",
-                "",
-                "Можно выбрать готовый диапазон, двигать минимум и максимум кнопками или ввести значения вручную.",
-            ]
-        ),
-        keyboard=BUDGET_MENU,
     )
 
 
@@ -940,8 +907,8 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
                 [
                     "Как пользоваться ботом",
                     "",
-                    "Категории: лучше выбирать из списка сайта.",
-                    "Если категории не заданы, бот показывает все новые заказы.",
+                    "Категории: откройте список сайта и выберите нужные.",
+                    "Если категории не заданы, бот всё равно дополнительно ищет по ключевым словам в названии и описании.",
                     "Кнопка Проверить показывает текущие совпадения сразу.",
                     "Отмена ввода: /cancel или Назад.",
                 ]
@@ -956,30 +923,8 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
         set_pending(chat_state, None)
         send_main_menu(config, chat_id, chat_state, intro="Вернулись в главное меню.")
         return ["save"]
-    if normalized in {"ключевые слова", "ключевые"}:
-        send_telegram_message(
-            config,
-            chat_id,
-            "Фильтр по ключевым словам сейчас отключен. Бот ориентируется на категории или показывает все новые заказы, если категории не заданы.",
-            keyboard=menu_with_pause(chat_state),
-        )
-        return ["save"]
     if normalized == "категории":
         handle_categories_menu(config, chat_id)
-        return ["save"]
-    if normalized == "показать категории":
-        send_telegram_message(
-            config,
-            chat_id,
-            "\n".join(
-                [
-                    "Категории",
-                    f"Include: {short_list(settings.get('include_categories', []))}",
-                    f"Exclude: {short_list(settings.get('exclude_categories', []))}",
-                ]
-            ),
-            keyboard=CATEGORIES_MENU,
-        )
         return ["save"]
     if normalized in {"список категорий", "список с сайта"}:
         send_telegram_message(
@@ -989,42 +934,13 @@ def process_message(config: dict, state: dict, chat_id: str, text: str) -> List[
             keyboard=CATEGORIES_MENU,
         )
         return ["save"]
-    if normalized in {"выбрать include категории", "выбрать include"}:
+    if normalized in {"выбрать категории", "выбрать include категории", "выбрать include"}:
         open_category_picker(config, chat_id, chat_state, "include")
         return ["save"]
-    if normalized in {"выбрать exclude категории", "выбрать exclude"}:
-        open_category_picker(config, chat_id, chat_state, "exclude")
-        return ["save"]
-    if normalized in {"задать include категории", "ввести include"}:
-        set_pending(chat_state, "set_include_categories")
-        send_telegram_message(
-            config,
-            chat_id,
-            "Отправьте include категории или специализации через запятую.",
-            keyboard=CATEGORIES_MENU,
-        )
-        return ["save"]
-    if normalized in {"задать exclude категории", "ввести exclude"}:
-        set_pending(chat_state, "set_exclude_categories")
-        send_telegram_message(
-            config,
-            chat_id,
-            "Отправьте exclude категории или специализации через запятую.",
-            keyboard=CATEGORIES_MENU,
-        )
-        return ["save"]
-    if normalized == "очистить категории":
+    if normalized in {"сбросить категории", "очистить категории"}:
         settings["include_categories"] = []
         settings["exclude_categories"] = []
-        send_telegram_message(config, chat_id, "Фильтр категорий очищен.", keyboard=CATEGORIES_MENU)
-        return ["save"]
-    if normalized == "бюджет":
-        send_telegram_message(
-            config,
-            chat_id,
-            "Фильтр по бюджету сейчас отключен. Бот не отсекает заказы по сумме.",
-            keyboard=menu_with_pause(chat_state),
-        )
+        send_telegram_message(config, chat_id, "Категории сброшены.", keyboard=CATEGORIES_MENU)
         return ["save"]
     if normalized in {"/check", "проверить сейчас", "проверить"}:
         return ["manual_check", "save"]
