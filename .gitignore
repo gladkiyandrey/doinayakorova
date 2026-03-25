@@ -1,0 +1,6 @@
+config.json
+.freelance_ua_seen.json
+notifier.log
+__pycache__/
+*.pyc
+.env

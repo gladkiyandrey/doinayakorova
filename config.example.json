@@ -1,0 +1,37 @@
+{
+  "telegram_bot_token": "PASTE_YOUR_BOT_TOKEN_HERE",
+  "telegram_chat_id": "PASTE_YOUR_CHAT_ID_HERE",
+  "allowed_chat_ids": [],
+  "feed_url": "https://freelance.ua/ru/orders/rss",
+  "orders_url": "https://freelance.ua/ru/orders/",
+  "poll_interval_seconds": 60,
+  "pages_to_scan": 3,
+  "include_keywords": [
+    "python",
+    "parser",
+    "парсер",
+    "telegram",
+    "бот",
+    "django",
+    "flask",
+    "fastapi",
+    "api",
+    "scraping",
+    "automation"
+  ],
+  "exclude_keywords": [
+    "дизайн",
+    "logo",
+    "логотип",
+    "smm",
+    "photoshop"
+  ],
+  "include_categories": [
+    "программирование",
+    "веб-программирование"
+  ],
+  "exclude_categories": [],
+  "require_all_keywords": false,
+  "min_price_uah": 500,
+  "max_price_uah": null
+}

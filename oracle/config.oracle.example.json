@@ -1,0 +1,19 @@
+{
+  "telegram_bot_token": "PASTE_YOUR_BOT_TOKEN_HERE",
+  "telegram_chat_id": "497138370",
+  "allowed_chat_ids": [],
+  "feed_url": "https://freelance.ua/ru/orders/rss",
+  "orders_url": "https://freelance.ua/ru/orders/",
+  "poll_interval_seconds": 60,
+  "pages_to_scan": 5,
+  "include_keywords": [],
+  "exclude_keywords": [],
+  "include_categories": [
+    "программирование",
+    "веб-программирование"
+  ],
+  "exclude_categories": [],
+  "require_all_keywords": false,
+  "min_price_uah": null,
+  "max_price_uah": null
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=Freelance.ua Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/opt/freelance-ua-bot
+ExecStart=/usr/bin/python3 /opt/freelance-ua-bot/freelance_ua_notifier.py --config /opt/freelance-ua-bot/config.json
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/freelance-ua-bot.log
+StandardError=append:/var/log/freelance-ua-bot.log
+
+[Install]
+WantedBy=multi-user.target
